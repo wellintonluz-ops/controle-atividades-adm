@@ -1,447 +1,1046 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>POP Interativo: Inventário dos Depósitos</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <style>
-        body {
-            font-family: 'Inter', sans-serif;
-            background-color: #f8f9fa;
-        }
-        .nav-link {
-            transition: all 0.3s ease;
-            border-bottom: 2px solid transparent;
-        }
-        .nav-link.active, .nav-link:hover {
-            border-bottom-color: #4f46e5;
-            color: #4f46e5;
-        }
-        .accordion-item {
-            transition: all 0.5s ease;
-        }
-        .accordion-content {
-            transition: all 0.5s ease;
-        }
-        .accordion-icon {
-            transition: transform 0.3s ease;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Time Tracker Pro - Executivo</title>
+  
+  <!-- Tailwind CSS para o design -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- React e ReactDOM -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  
+  <!-- Babel para compilar o código no navegador -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- Firebase -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore-compat.js"></script>
+
+  <style>
+    /* Esconde elementos na hora da impressão */
+    @media print {
+      body { background-color: white !important; }
+      .print\:hidden { display: none !important; }
+      .print\:shadow-none { box-shadow: none !important; }
+      .print\:border-none { border: none !important; }
+      .print\:m-0 { margin: 0 !important; }
+      .print\:p-0 { padding: 0 !important; }
+      .print\:mb-8 { margin-bottom: 2rem !important; }
+      .print\:block { display: block !important; }
+      .print\:static { position: static !important; }
+      .print\:border-b-2 { border-bottom-width: 2px !important; }
+      .print\:border-slate-800 { border-color: #1e293b !important; }
+      .print\:bg-white { background-color: white !important; }
+      .print\:border-slate-300 { border-color: #cbd5e1 !important; }
+    }
+  </style>
 </head>
-<body class="bg-gray-50 text-gray-800">
+<body class="bg-slate-50">
+  <div id="root"></div>
 
-    <header class="bg-white shadow-sm sticky top-0 z-10">
-        <nav class="container mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="flex items-center justify-between h-16">
-                <div class="flex-shrink-0">
-                    <h1 class="text-xl font-bold text-gray-900">POP: Procedimento de Inventário dos Depósitos</h1>
-                </div>
-                <div class="hidden md:block">
-                    <div class="ml-10 flex items-baseline space-x-4">
-                        <a href="#overview" class="nav-link px-3 py-2 rounded-md text-sm font-medium text-gray-600 active">Visão Geral</a>
-                        <a href="#depositos" class="nav-link px-3 py-2 rounded-md text-sm font-medium text-gray-600">Depósitos</a>
-                        <a href="#registro" class="nav-link px-3 py-2 rounded-md text-sm font-medium text-gray-600">Registro</a>
-                        <a href="#quiz" class="nav-link px-3 py-2 rounded-md text-sm font-medium text-gray-600">Quiz</a>
-                    </div>
-                </div>
-            </div>
-        </nav>
-    </header>
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+    
+    // Firebase
+    let db = null;
+    let firebaseInit = false;
+    
+    function initializeFirebase() {
+      if (firebaseInit || typeof firebase === 'undefined') return;
+      try {
+        const firebaseConfig = {
+          apiKey: "AIzaSyAvcXmI1Sa1r1vpy9W7HHGkJ7RGt-8xfIE",
+          authDomain: "controle-atividades-adm.firebaseapp.com",
+          projectId: "controle-atividades-adm",
+          storageBucket: "controle-atividades-adm.firebasestorage.app",
+          messagingSenderId: "881590529414",
+          appId: "1:881590529414:web:c98200a4d1b14f6647d007"
+        };
+        if (!firebase.apps.length) {
+          firebase.initializeApp(firebaseConfig);
+          db = firebase.firestore();
+          firebaseInit = true;
+        }
+      } catch (error) {
+        console.warn('Firebase init error (aplicação continua funcionando):', error.message);
+      }
+    }
+    
+    // Ícones embutidos diretamente para evitar erros de CDN externos (Lucide Icons SVG equivalentes)
+    const Icon = ({ size = 24, className = '', children }) => (
+      <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        {children}
+      </svg>
+    );
 
-    <main class="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    const Play = (p) => <Icon {...p}><polygon points="5 3 19 12 5 21 5 3"></polygon></Icon>;
+    const Pause = (p) => <Icon {...p}><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></Icon>;
+    const RotateCcw = (p) => <Icon {...p}><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></Icon>;
+    const CheckSquare = (p) => <Icon {...p}><polyline points="9 11 12 14 22 4"></polyline><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></Icon>;
+    const Clock = (p) => <Icon {...p}><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></Icon>;
+    const Activity = (p) => <Icon {...p}><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></Icon>;
+    const Coffee = (p) => <Icon {...p}><path d="M18 8h1a4 4 0 0 1 0 8h-1"></path><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"></path><line x1="6" y1="1" x2="6" y2="4"></line><line x1="10" y1="1" x2="10" y2="4"></line><line x1="14" y1="1" x2="14" y2="4"></line></Icon>;
+    const BarChart2 = (p) => <Icon {...p}><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></Icon>;
+    const LogOut = (p) => <Icon {...p}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></Icon>;
+    const Lock = (p) => <Icon {...p}><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></Icon>;
+    const ListPlus = (p) => <Icon {...p}><path d="M11 12H3"></path><path d="M16 6H3"></path><path d="M16 18H3"></path><path d="M18 9v6"></path><path d="M21 12h-6"></path></Icon>;
+    const Trash2 = (p) => <Icon {...p}><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></Icon>;
+    const LayoutDashboard = (p) => <Icon {...p}><rect x="3" y="3" width="7" height="9"></rect><rect x="14" y="3" width="7" height="5"></rect><rect x="14" y="12" width="7" height="9"></rect><rect x="3" y="16" width="7" height="5"></rect></Icon>;
+    const PieChart = (p) => <Icon {...p}><path d="M21.21 15.89A10 10 0 1 1 8 2.83"></path><path d="M22 12A10 10 0 0 0 12 2v10z"></path></Icon>;
+    const Printer = (p) => <Icon {...p}><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></Icon>;
+    const Award = (p) => <Icon {...p}><circle cx="12" cy="8" r="7"></circle><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"></polyline></Icon>;
+    const AlertCircle = (p) => <Icon {...p}><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></Icon>;
+    const Target = (p) => <Icon {...p}><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="6"></circle><circle cx="12" cy="12" r="2"></circle></Icon>;
+    const Save = (p) => <Icon {...p}><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></Icon>;
 
-        <section id="overview" class="mb-12">
-            <h2 class="text-2xl font-bold text-gray-900 mb-2">Visão Geral e Responsabilidades</h2>
-            <p class="text-gray-600 mb-6">Este Procedimento Operacional Padrão (POP) descreve o processo de inventário dos depósitos para garantir a acuracidade do estoque. O <strong>Setor de Auditoria de Estoque</strong> é o principal responsável, podendo solicitar auxílio de outros setores.</p>
-            <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                <div class="bg-white p-6 rounded-lg shadow">
-                    <h3 class="text-lg font-semibold text-gray-900 mb-2">Objetivo</h3>
-                    <p class="text-gray-600">Garantir a precisão do estoque físico e sistêmico, assegurando <strong>“Entrada OK” e “Saída OK”</strong> diariamente.</p>
-                </div>
-                <div class="bg-white p-6 rounded-lg shadow">
-                    <h3 class="text-lg font-semibold text-gray-900 mb-2">Variações de Depósitos</h3>
-                    <p class="text-gray-600">Todos os depósitos padrão possuem variações com sufixos:</p>
-                    <ul class="list-disc list-inside text-gray-600">
-                        <li>.AT (Área de transferências)</li>
-                        <li>.DESC (Área para descarte)</li>
-                        <li>.INS (Área para inserção de saldo)</li>
-                    </ul>
-                </div>
-                <div class="bg-white p-6 rounded-lg shadow">
-                    <h3 class="text-lg font-semibold text-gray-900 mb-2">Divergências</h3>
-                    <p class="text-gray-600">Qualquer divergência encontrada (físico ou sistema) deverá ser movida para a área de auditoria (INV.AT), registrada em ficha própria e comunicada ao líder.</p>
-                </div>
-            </div>
-        </section>
+    function App() {
+      const [records, setRecords] = useState([]);
+      const [activeTask, setActiveTask] = useState(null);
+      
+      // Estado de autenticação e navegação
+      const [isLoggedIn, setIsLoggedIn] = useState(false);
+      const [showLoginModal, setShowLoginModal] = useState(false);
+      const [activeTab, setActiveTab] = useState('dashboard');
+      
+      // Dados do utilizador
+      const [worker, setWorker] = useState('Daniel');
+      const [loginInput, setLoginInput] = useState('');
+      const [passwordInput, setPasswordInput] = useState('');
+      const [loginError, setLoginError] = useState('');
+      
+      // Tarefas e Motivos
+      const tasks = ['Atualizar Tiny', 'Emitir NFD', 'Marketplaces', 'Análise de Faturas'];
+      const [taskName, setTaskName] = useState(tasks[0]);
+      
+      const [motivos, setMotivos] = useState(['Pausa para Café', 'Almoço', 'Reunião Externa']);
+      const [novoMotivo, setNovoMotivo] = useState('');
+      const [selectedMotivo, setSelectedMotivo] = useState(motivos[0]);
+      
+      // Funcionários e Quantidade
+      const [employees, setEmployees] = useState(['Daniel']);
+      const [newEmployee, setNewEmployee] = useState('');
+      const [taskQuantity, setTaskQuantity] = useState('');
 
-        <hr class="my-12 border-gray-200">
+      // Timer em tempo real para a pausa
+      const [now, setNow] = useState(Date.now());
+      useEffect(() => {
+        const interval = setInterval(() => {
+          setNow(Date.now());
+        }, 1000);
+        return () => clearInterval(interval);
+      }, []);
 
-        <section id="depositos" class="mb-12">
-            <h2 class="text-2xl font-bold text-gray-900 mb-2">Depósitos e Tipos de Contagens</h2>
-            <p class="text-gray-600 mb-8">Clique em cada depósito para ver os detalhes sobre o tipo e recorrência do inventário.</p>
+      useEffect(() => {
+        if (!motivos.includes(selectedMotivo) && motivos.length > 0) {
+          setSelectedMotivo(motivos[0]);
+        }
+      }, [motivos, selectedMotivo]);
 
-            <div class="space-y-4">
-                <div class="accordion-item bg-white rounded-lg shadow-sm">
-                    <button class="accordion-header w-full text-left p-4 font-semibold flex justify-between items-center">
-                        <span>BO.AT (Depósito de transferências para expedição)</span>
-                        <span class="accordion-icon transform transition-transform">▶</span>
-                    </button>
-                    <div class="accordion-content max-h-0 overflow-hidden transition-all duration-500 ease-in-out">
-                        <div class="p-4 border-t border-gray-200">
-                            <ul class="list-disc list-inside text-gray-600">
-                                <li><strong>Recorrência:</strong> Diário (início de cada turno)</li>
-                                <li><strong>Tipo:</strong> Por SKU. Divergência em qualquer quantidade de um SKU, o SKU é considerado com erro.</li>
-                                <li><strong>Exemplo:</strong> 2 SKUs inventariados – 1 SKU com erro = 50% de acuracidade.</li>
-                            </ul>
-                        </div>
-                    </div>
-                </div>
+      const formatTime = (dateStr) => {
+        if (!dateStr) return '--:--';
+        return new Date(dateStr).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      };
 
-                <div class="accordion-item bg-white rounded-lg shadow-sm">
-                    <button class="accordion-header w-full text-left p-4 font-semibold flex justify-between items-center">
-                        <span>INB.AT (Recebimento de compras), EXP.AT (Expedição), DES.AT (Desmontagens), ENV.AT (Envios)</span>
-                        <span class="accordion-icon transform transition-transform">▶</span>
-                    </button>
-                    <div class="accordion-content max-h-0 overflow-hidden transition-all duration-500 ease-in-out">
-                        <div class="p-4 border-t border-gray-200">
-                            <ul class="list-disc list-inside text-gray-600">
-                                <li><strong>Recorrência:</strong> Diário (início e fim de cada turno)</li>
-                                <li><strong>Tipo:</strong> Por dia. Divergência em qualquer unidade, o dia é considerado com erro.</li>
-                                <li><strong>Exemplo (INB.AT):</strong> 1 dia inventariado – 1 dia com erro = 0% de acuracidade.</li>
-                            </ul>
-                        </div>
-                    </div>
-                </div>
+      const formatDate = (dateStr) => {
+        if (!dateStr) return '--/--';
+        return new Date(dateStr).toLocaleDateString([], { day: '2-digit', month: '2-digit' });
+      };
 
-                <div class="accordion-item bg-white rounded-lg shadow-sm">
-                    <button class="accordion-header w-full text-left p-4 font-semibold flex justify-between items-center">
-                        <span>OP.AT (Montagem de ordens de produção)</span>
-                        <span class="accordion-icon transform transition-transform">▶</span>
-                    </button>
-                    <div class="accordion-content max-h-0 overflow-hidden transition-all duration-500 ease-in-out">
-                        <div class="p-4 border-t border-gray-200">
-                            <ul class="list-disc list-inside text-gray-600">
-                                <li><strong>Recorrência:</strong> Diário (início e fim de cada turno)</li>
-                                <li><strong>Tipo:</strong> Por lote (ordem de produção). Divergência em qualquer unidade de uma ordem, a ordem inteira é considerada com erro.</li>
-                                <li><strong>Exemplo:</strong> 2 ordens inventariadas – 1 ordem com erro = 50% de acuracidade.</li>
-                            </ul>
-                        </div>
-                    </div>
-                </div>
+      const calculateDurationStr = (ms) => {
+        if (isNaN(ms) || ms <= 0) return '00:00:00';
+        const totalSeconds = Math.floor(ms / 1000);
+        const hours = Math.floor(totalSeconds / 3600);
+        const minutes = Math.floor((totalSeconds % 3600) / 60);
+        const seconds = totalSeconds % 60;
+        return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+      };
 
-                <div class="accordion-item bg-white rounded-lg shadow-sm">
-                    <button class="accordion-header w-full text-left p-4 font-semibold flex justify-between items-center">
-                        <span>Porta Pallet (Armazenamento Principal)</span>
-                        <span class="accordion-icon transform transition-transform">▶</span>
-                    </button>
-                    <div class="accordion-content max-h-0 overflow-hidden transition-all duration-500 ease-in-out">
-                        <div class="p-4 border-t border-gray-200">
-                            <ul class="list-disc list-inside text-gray-600">
-                                <li><strong>Recorrência:</strong> Diário (mínimo 2 por dia)</li>
-                                <li><strong>Tipo:</strong> Por posição. Divergência em qualquer unidade, a posição inteira é considerada com erro.</li>
-                                <li><strong>Exemplo:</strong> 2 posições inventariadas – 1 posição com erro = 50% de acuracidade.</li>
-                            </ul>
-                        </div>
-                    </div>
-                </div>
+      const formatLiveDuration = (startMs, currentMs) => {
+        const diff = Math.max(0, currentMs - startMs);
+        return calculateDurationStr(diff);
+      };
 
-                <div class="accordion-item bg-white rounded-lg shadow-sm">
-                    <button class="accordion-header w-full text-left p-4 font-semibold flex justify-between items-center">
-                        <span>REC.AT (Recebimento de devoluções) e SEG.AT (Falta de componentes)</span>
-                        <span class="accordion-icon transform transition-transform">▶</span>
-                    </button>
-                    <div class="accordion-content max-h-0 overflow-hidden transition-all duration-500 ease-in-out">
-                        <div class="p-4 border-t border-gray-200">
-                            <ul class="list-disc list-inside text-gray-600">
-                                <li><strong>Recorrência:</strong> Diário (início e fim de cada turno)</li>
-                                <li><strong>Tipo:</strong> Por unidade. Divergência em qualquer unidade, é considerado erro.</li>
-                                <li><strong>Exemplo (REC.AT):</strong> Sistema total 400 unidades – Físico 350 unidades. Acuracidade = 87,5%.</li>
-                            </ul>
-                        </div>
-                    </div>
-                </div>
+      const handleLogin = (e) => {
+        e.preventDefault();
+        setLoginError('');
+        
+        if (loginInput.trim().toLowerCase() === 'sara' && passwordInput === '7842') {
+          setWorker('Daniel'); 
+          setIsLoggedIn(true);
+          setShowLoginModal(false);
+          setPasswordInput(''); 
+          setLoginInput(''); 
+        } else {
+          setLoginError('Utilizador ou palavra-passe incorretos.');
+        }
+      };
 
-                <div class="accordion-item bg-white rounded-lg shadow-sm">
-                    <button class="accordion-header w-full text-left p-4 font-semibold flex justify-between items-center">
-                        <span>Depósitos que Não Necessitam de Inventário</span>
-                        <span class="accordion-icon transform transition-transform">▶</span>
-                    </button>
-                    <div class="accordion-content max-h-0 overflow-hidden transition-all duration-500 ease-in-out">
-                        <div class="p-4 border-t border-gray-200">
-                            <ul class="list-disc list-inside text-gray-600">
-                                <li>IMO.AT (Ativos imobilizados)</li>
-                                <li>MAN.AT (Manutenção de produtos)</li>
-                                <li>INV.AT (Materiais em auditoria)</li>
-                                <li>PROD.AT (Área de espera para ordens de produção)</li>
-                            </ul>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </section>
+      const handleLogout = () => {
+        if (activeTask) {
+          alert("Por favor, finalize a tarefa ativa antes de terminar a sessão.");
+          return;
+        }
+        setIsLoggedIn(false);
+        setActiveTab('dashboard'); 
+      };
 
-        <hr class="my-12 border-gray-200">
+      const handleAddMotivo = (e) => {
+        e.preventDefault();
+        if (novoMotivo.trim() && !motivos.includes(novoMotivo.trim())) {
+          setMotivos([...motivos, novoMotivo.trim()]);
+          setNovoMotivo('');
+        }
+      };
 
-        <section id="registro" class="mb-12">
-            <h2 class="text-2xl font-bold text-gray-900 mb-2">Registro dos Inventários</h2>
-            <p class="text-gray-600 mb-6">Todos os inventários (início e fim de turno) devem ser registrados em planilha de controle. A planilha deve conter as seguintes informações:</p>
-            <div class="bg-white p-6 rounded-lg shadow">
-                <ul class="list-disc list-inside text-gray-600 space-y-2">
-                    <li>Data e horário da contagem</li>
-                    <li>Nome do responsável</li>
-                    <li>Saldo físico x saldo sistêmico</li>
-                    <li>Observações em caso de divergência</li>
-                </ul>
-            </div>
-        </section>
+      const handleRemoveMotivo = (motivoToRemove) => {
+        setMotivos(motivos.filter(m => m !== motivoToRemove));
+      };
 
-        <hr class="my-12 border-gray-200">
+      const handleAddEmployee = (e) => {
+        e.preventDefault();
+        if (newEmployee.trim() && !employees.includes(newEmployee.trim())) {
+          setEmployees([...employees, newEmployee.trim()]);
+          setNewEmployee('');
+        }
+      };
 
-        <section id="audio-quiz" class="mb-12">
-            <h2 class="text-2xl font-bold text-gray-900 mb-6 text-center">Áudio e Quiz de Conhecimentos</h2>
+      const handleRemoveEmployee = (name) => {
+        setEmployees(employees.filter(e => e !== name));
+        if (worker === name && employees.length > 1) {
+          setWorker(employees.find(e => e !== name) || 'Daniel');
+        }
+      };
 
-            <!-- Audio Player Section -->
-            <div class="mb-8 p-4 bg-gray-50 rounded-lg border border-gray-200 shadow-sm">
-                <h3 class="text-xl font-semibold mb-3 text-gray-700">Ouvir o Procedimento</h3>
-                <audio controls class="w-full rounded-md shadow">
-                    <source src="pop-inventarios-depositos.mp3" type="audio/mpeg">
-                    Seu navegador não suporta o elemento de áudio.
-                </audio>
-            </div>
+      const handleQuantityChange = (value) => {
+        setTaskQuantity(value);
+        if (activeTask) {
+          setActiveTask({ ...activeTask, quantity: Number(value) || 0 });
+        }
+      };
 
-            <!-- Quiz Section -->
-            <div class="p-4 bg-gray-50 rounded-lg border border-gray-200 shadow-sm">
-                <h3 class="text-xl font-semibold mb-4 text-gray-700">Teste seu Conhecimento sobre o POP de Inventário</h3>
-                <div id="quiz-container" class="space-y-4 hidden">
-                    <div class="bg-blue-500 text-white p-3 rounded-md text-lg font-medium mb-4" id="question-text"></div>
-                    <div id="options-container" class="space-y-3"></div>
-                    <div id="feedback" class="text-center font-medium mt-4"></div>
-                    <button id="next-button" class="mt-4 w-full bg-gray-300 text-gray-700 py-2 px-4 rounded-md font-bold transition-colors hover:bg-gray-400">Próxima Pergunta</button>
-                </div>
-                <div id="start-screen" class="text-center">
-                    <p class="text-gray-600 mb-4">Clique no botão para iniciar o quiz.</p>
-                    <button id="start-button" class="bg-blue-500 text-white py-2 px-6 rounded-md font-bold text-lg shadow-md transition-transform transform hover:scale-105">Iniciar Quiz</button>
-                </div>
-                <div id="result-screen" class="text-center hidden">
-                    <p class="text-2xl font-bold text-gray-800 mb-3">Quiz Concluído!</p>
-                    <p class="text-xl text-gray-600 mb-4">Sua pontuação: <span id="score-text" class="font-bold text-blue-600"></span></p>
-                    <button id="restart-button" class="bg-green-500 text-white py-2 px-6 rounded-md font-bold text-lg shadow-md transition-transform transform hover:scale-105">Refazer o Quiz</button>
-                </div>
-            </div>
-        </section>
+      const handleStart = () => {
+        if (activeTask && !activeTask.endTime) {
+          alert("Finalize a tarefa atual antes de iniciar outra.");
+          return;
+        }
 
-    </main>
+        if (!worker) {
+          alert("Selecione um funcionário para iniciar a tarefa.");
+          return;
+        }
+        
+        const newTask = {
+          id: Date.now(),
+          date: new Date().toISOString(),
+          worker,
+          task: taskName,
+          quantity: Number(taskQuantity) || 0,
+          startTime: new Date().toISOString(),
+          pauses: [],
+          endTime: null,
+          status: 'Em andamento'
+        };
+        setActiveTask(newTask);
+      };
 
-    <footer class="bg-white mt-12">
-        <div class="container mx-auto px-8 py-4 text-center text-gray-500">
-            <p>&copy; 2025 Guia de Procedimentos Internos. Todos os direitos reservados.</p>
-        </div>
-    </footer>
-
-    <script>
-        document.addEventListener('DOMContentLoaded', function () {
-            const navLinks = document.querySelectorAll('.nav-link');
-            const sections = document.querySelectorAll('main section');
-
-            const observerOptions = {
-                root: null,
-                rootMargin: '0px',
-                threshold: 0.4
-            };
-
-            const observer = new IntersectionObserver((entries) => {
-                entries.forEach(entry => {
-                    if (entry.isIntersecting) {
-                        navLinks.forEach(link => {
-                            link.classList.remove('active');
-                            if (link.getAttribute('href').substring(1) === entry.target.id) {
-                                link.classList.add('active');
-                            }
-                        });
-                    }
-                });
-            }, observerOptions);
-
-            sections.forEach(section => {
-                observer.observe(section);
-            });
-
-            navLinks.forEach(link => {
-                link.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    document.querySelector(link.getAttribute('href')).scrollIntoView({
-                        behavior: 'smooth'
-                    });
-                });
-            });
-
-            const accordionItems = document.querySelectorAll('.accordion-item');
-            accordionItems.forEach(item => {
-                const header = item.querySelector('.accordion-header');
-                const content = item.querySelector('.accordion-content');
-                const icon = item.querySelector('.accordion-icon');
-
-                header.addEventListener('click', () => {
-                    const isOpen = content.style.maxHeight && content.style.maxHeight !== '0px';
-                    
-                    document.querySelectorAll('.accordion-content').forEach(c => c.style.maxHeight = '0px');
-                    document.querySelectorAll('.accordion-icon').forEach(i => i.style.transform = 'rotate(0deg)');
-
-                    if (!isOpen) {
-                        content.style.maxHeight = content.scrollHeight + 'px';
-                        icon.style.transform = 'rotate(90deg)';
-                    }
-                });
-            });
-
-            const questions = [
-                {
-                    question: "Qual a recorrência de inventário para o depósito REC.AT?",
-                    options: ["Semanalmente", "Diariamente (início e fim de cada turno)", "Mensalmente", "Apenas quando solicitado"],
-                    answer: "Diariamente (início e fim de cada turno)"
-                },
-                {
-                    question: "Qual o critério de acuracidade para o inventário do depósito BO.AT?",
-                    options: ["Por unidade", "Por dia", "Por SKU", "Por lote"],
-                    answer: "Por SKU"
-                },
-                {
-                    question: "Em caso de divergência em qualquer unidade, o inventário do depósito INB.AT é considerado com erro por qual critério?",
-                    options: ["Por unidade", "Por dia", "Por SKU", "Por posição"],
-                    answer: "Por dia"
-                },
-                {
-                    question: "Para onde as divergências encontradas devem ser movidas, segundo o POP?",
-                    options: ["Diretamente para a expedição", "Para a área de auditoria (INV.AT)", "Para a área de descarte (DESC)", "Para o depósito de manutenção (MAN.AT)"],
-                    answer: "Para a área de auditoria (INV.AT)"
-                },
-                {
-                    question: "Qual o tipo de inventário utilizado para o depósito OP.AT?",
-                    options: ["Por lote (ordem de produção)", "Por unidade", "Por dia", "Por posição"],
-                    answer: "Por lote (ordem de produção)"
-                },
-                {
-                    question: "Quantos 'porta pallet' devem ser inventariados diariamente?",
-                    options: ["Um mínimo de 10", "Um mínimo de 2", "Todos os porta pallet", "Apenas os que tiverem divergência"],
-                    answer: "Um mínimo de 2"
-                },
-                {
-                    question: "Qual variação de depósito é utilizada para solicitações de inserção de saldo?",
-                    options: [".AT", ".DESC", ".INS", ".INV"],
-                    answer: ".INS"
-                },
-                {
-                    question: "Em caso de divergência no inventário de um 'Porta pallet', o que é considerado com erro?",
-                    options: ["Apenas a unidade em divergência", "O SKU como um todo", "A posição inteira", "Apenas o produto que gerou a divergência"],
-                    answer: "A posição inteira"
-                }
-            ];
-
-            let currentQuestionIndex = 0;
-            let score = 0;
-            let answeredThisQuestion = false;
-
-            const startButton = document.getElementById('start-button');
-            const nextButton = document.getElementById('next-button');
-            const restartButton = document.getElementById('restart-button');
-
-            const startScreen = document.getElementById('start-screen');
-            const quizContainer = document.getElementById('quiz-container');
-            const resultScreen = document.getElementById('result-screen');
-            const questionText = document.getElementById('question-text');
-            const optionsContainer = document.getElementById('options-container');
-            const scoreText = document.getElementById('score-text');
-            const feedbackText = document.getElementById('feedback');
-
-            if (startButton) startButton.addEventListener('click', startQuiz);
-            if (nextButton) nextButton.addEventListener('click', () => {
-                if (answeredThisQuestion) {
-                    currentQuestionIndex++;
-                    if (currentQuestionIndex < questions.length) {
-                        showQuestion();
-                    } else {
-                        showResult();
-                    }
-                }
-            });
-            if (restartButton) restartButton.addEventListener('click', restartQuiz);
-
-            function startQuiz() {
-                startScreen.classList.add('hidden');
-                resultScreen.classList.add('hidden');
-                quizContainer.classList.remove('hidden');
-                currentQuestionIndex = 0;
-                score = 0;
-                showQuestion();
-            }
-
-            function showQuestion() {
-                answeredThisQuestion = false;
-                nextButton.classList.add('hidden');
-                feedbackText.textContent = '';
-                
-                const currentQuestion = questions[currentQuestionIndex];
-                questionText.textContent = `Pergunta ${currentQuestionIndex + 1}: ${currentQuestion.question}`;
-                
-                optionsContainer.innerHTML = '';
-                currentQuestion.options.forEach(option => {
-                    const button = document.createElement('button');
-                    button.textContent = option;
-                    button.classList.add('w-full', 'bg-white', 'text-gray-800', 'py-3', 'px-4', 'rounded-md', 'border', 'border-gray-300', 'text-left', 'transition-colors', 'hover:bg-gray-200');
-                    button.addEventListener('click', () => selectAnswer(button, option));
-                    optionsContainer.appendChild(button);
-                });
-            }
-
-            function selectAnswer(button, selectedOption) {
-                if (answeredThisQuestion) return;
-                answeredThisQuestion = true;
-                
-                const currentQuestion = questions[currentQuestionIndex];
-                
-                if (selectedOption === currentQuestion.answer) {
-                    score++;
-                    button.classList.remove('bg-white', 'hover:bg-gray-200');
-                    button.classList.add('bg-green-500', 'text-white', 'pointer-events-none');
-                    feedbackText.textContent = "Correto!";
-                    feedbackText.classList.remove('text-red-500');
-                    feedbackText.classList.add('text-green-500');
-                } else {
-                    button.classList.remove('bg-white', 'hover:bg-gray-200');
-                    button.classList.add('bg-red-500', 'text-white', 'pointer-events-none');
-                    feedbackText.textContent = `Incorreto. A resposta correta era: "${currentQuestion.answer}"`;
-                    feedbackText.classList.remove('text-green-500');
-                    feedbackText.classList.add('text-red-500');
-
-                    const optionButtons = optionsContainer.querySelectorAll('button');
-                    optionButtons.forEach(btn => {
-                        if (btn.textContent === currentQuestion.answer) {
-                            btn.classList.add('bg-green-500', 'text-white');
-                        }
-                        btn.classList.add('pointer-events-none');
-                    });
-                }
-                nextButton.classList.remove('hidden');
-            }
-
-            function showResult() {
-                quizContainer.classList.add('hidden');
-                resultScreen.classList.remove('hidden');
-                scoreText.textContent = `${score} de ${questions.length}`;
-            }
-
-            function restartQuiz() {
-                currentQuestionIndex = 0;
-                score = 0;
-                startScreen.classList.remove('hidden');
-                quizContainer.classList.add('hidden');
-                resultScreen.classList.add('hidden');
-                startQuiz();
-            }
+      const handlePause = () => {
+        if (!activeTask) return;
+        const pauses = activeTask.pauses || [];
+        const lastPause = pauses[pauses.length - 1];
+        if (lastPause && !lastPause.endTime) return; // já em pausa
+        const newPause = {
+          startTime: new Date().toISOString(),
+          endTime: null,
+          reason: selectedMotivo
+        };
+        setActiveTask({ 
+          ...activeTask, 
+          pauses: [...pauses, newPause],
+          status: 'Em pausa' 
         });
-    </script>
+      };
 
+      const handleReturn = () => {
+        if (!activeTask) return;
+        const pauses = activeTask.pauses || [];
+        const lastPause = pauses[pauses.length - 1];
+        if (!lastPause || lastPause.endTime) return; // não está em pausa
+        const updatedPauses = pauses.slice(0, -1).concat([{ ...lastPause, endTime: new Date().toISOString() }]);
+        setActiveTask({ ...activeTask, pauses: updatedPauses, status: 'Retornado' });
+      };
+
+      const handleEnd = () => {
+        if (!activeTask) return;
+        
+        const endTime = new Date().toISOString();
+        const start = new Date(activeTask.startTime).getTime();
+        const end = new Date(endTime).getTime();
+        
+        let totalMs = end - start;
+        let pauseMs = 0;
+
+        const pauses = (activeTask.pauses || []).map(p => {
+          if (!p.endTime) {
+            return { ...p, endTime: endTime };
+          }
+          return p;
+        });
+
+        pauseMs = pauses.reduce((acc, p) => {
+          if (!p.startTime || !p.endTime) return acc;
+          return acc + (new Date(p.endTime).getTime() - new Date(p.startTime).getTime());
+        }, 0);
+
+        activeTask.pauses = pauses;
+        
+        let produtivoMs = totalMs - pauseMs;
+        const quantidade = Number(activeTask.quantity) || 0;
+        const horasProdutivas = produtivoMs > 0 ? produtivoMs / 3600000 : 0;
+        const quantidadePorHora = horasProdutivas > 0 ? quantidade / horasProdutivas : 0;
+
+        const completedTask = {
+          ...activeTask,
+          endTime,
+          totalMs,
+          pauseMs,
+          produtivoMs,
+          pauses,
+          quantidadePorHora,
+          status: 'Concluído'
+        };
+
+        setRecords([completedTask, ...records]);
+        setActiveTask(null);
+        setTaskQuantity('');
+      };
+
+      const handleExportPausas = () => {
+        if (!pausasDetalhadas.length) return;
+        const header = ['Data', 'Funcionário', 'Tarefa', 'Motivo', 'Início', 'Fim', 'Duração'];
+        const rows = pausasDetalhadas.map(p => [
+          formatDate(p.date),
+          p.worker,
+          p.task,
+          p.reason || '',
+          formatTime(p.startTime),
+          formatTime(p.endTime),
+          calculateDurationStr(p.durationMs)
+        ]);
+        const csv = [header, ...rows]
+          .map(r => r.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(';'))
+          .join('\n');
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `relatorio-pausas-${new Date().toISOString().slice(0, 10)}.csv`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      };
+
+      // Cálculos do Dashboard
+      const totalWorkedMs = records.reduce((acc, curr) => acc + (curr.totalMs || 0), 0);
+      const totalPauseMs = records.reduce((acc, curr) => acc + (curr.pauseMs || 0), 0);
+      const totalProdutivoMs = records.reduce((acc, curr) => acc + (curr.produtivoMs || 0), 0);
+      const eficiencia = totalWorkedMs > 0 ? Math.round((totalProdutivoMs / totalWorkedMs) * 100) : 0;
+
+      // Cálculos de Relatório por Tarefa
+      const statsPorTarefa = tasks.map(t => {
+        const taskRecords = records.filter(r => r.task === t);
+        const tTotal = taskRecords.reduce((acc, curr) => acc + (curr.totalMs || 0), 0);
+        const tProdutivo = taskRecords.reduce((acc, curr) => acc + (curr.produtivoMs || 0), 0);
+        const tPausa = taskRecords.reduce((acc, curr) => acc + (curr.pauseMs || 0), 0);
+        const tEficiencia = tTotal > 0 ? Math.round((tProdutivo / tTotal) * 100) : 0;
+        return {
+          nome: t,
+          count: taskRecords.length,
+          totalMs: tTotal,
+          produtivoMs: tProdutivo,
+          pausaMs: tPausa,
+          eficiencia: tEficiencia
+        };
+      });
+
+      const maxProdutivoMs = Math.max(...statsPorTarefa.map(s => s.produtivoMs), 1);
+      
+      // Agregação de pausas detalhadas para relatório
+      const pausasDetalhadas = records.flatMap((record, recordIndex) => {
+        return (record.pauses || []).map((pause, pauseIndex) => ({
+          key: `${record.id}-${pauseIndex}`,
+          date: record.date,
+          worker: record.worker,
+          task: record.task,
+          reason: pause.reason || '--',
+          startTime: pause.startTime,
+          endTime: pause.endTime || new Date().toISOString(),
+          durationMs: pause.endTime ? 
+            new Date(pause.endTime).getTime() - new Date(pause.startTime).getTime() : 0
+        }));
+      });
+      
+      // Salvar no Firestore quando records mudar (com debounce)
+      useEffect(() => {
+        initializeFirebase();
+        const saveTimer = setTimeout(() => {
+          if (db && records.length > 0) {
+            // Salvar cada record individualmente para evitar sobrescrita entre usuários
+            records.forEach((record) => {
+              db.collection('records').doc(String(record.id)).set({
+                ...record,
+                updatedAt: new Date().toISOString()
+              }).catch((error) => console.warn('Erro ao salvar registro:', error.message));
+            });
+            
+            // Salvar também um índice com todos os IDs para referência rápida
+            db.collection('meta').doc('recordsIndex').set({
+              ids: records.map(r => r.id),
+              lastUpdated: new Date().toISOString(),
+              totalRecords: records.length
+            }).catch((error) => console.warn('Erro ao atualizar índice:', error.message));
+          }
+        }, 2000);
+        return () => clearTimeout(saveTimer);
+      }, [records]);
+
+      return (
+        <div className="min-h-screen bg-slate-50 p-4 md:p-8 font-sans text-slate-800 relative">
+          
+          {/* Modal de Login */}
+          {showLoginModal && (
+            <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+              <div className="bg-white p-8 rounded-xl shadow-xl border border-slate-100 w-full max-w-md animate-in fade-in zoom-in duration-200">
+                <div className="flex justify-between items-start mb-6">
+                  <div className="flex flex-col">
+                    <div className="bg-indigo-100 p-3 rounded-full mb-3 w-fit">
+                      <Lock size={24} className="text-indigo-600" />
+                    </div>
+                    <h2 className="text-2xl font-bold text-indigo-900">Acesso Restrito</h2>
+                    <p className="text-slate-500 text-sm mt-1">Inicie sessão para aceder às configurações</p>
+                  </div>
+                  <button onClick={() => setShowLoginModal(false)} className="text-slate-400 hover:text-slate-600">
+                    ✕
+                  </button>
+                </div>
+                <form onSubmit={handleLogin} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-600 mb-1">Utilizador</label>
+                    <input 
+                      type="text" 
+                      value={loginInput}
+                      onChange={(e) => setLoginInput(e.target.value)}
+                      className="w-full border border-slate-200 rounded-lg px-4 py-2 focus:ring-2 focus:ring-indigo-500 outline-none"
+                      placeholder="Introduza o utilizador"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-600 mb-1">Palavra-passe</label>
+                    <input 
+                      type="password" 
+                      value={passwordInput}
+                      onChange={(e) => setPasswordInput(e.target.value)}
+                      className="w-full border border-slate-200 rounded-lg px-4 py-2 focus:ring-2 focus:ring-indigo-500 outline-none"
+                      placeholder="Introduza a palavra-passe"
+                      required
+                    />
+                  </div>
+                  
+                  {loginError && (
+                    <p className="text-red-500 text-sm font-medium">{loginError}</p>
+                  )}
+
+                  <button 
+                    type="submit"
+                    className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2 mt-2"
+                  >
+                    Entrar
+                  </button>
+                </form>
+              </div>
+            </div>
+          )}
+
+          <div className="max-w-6xl mx-auto space-y-6">
+            
+            {/* Cabeçalho */}
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between bg-white p-6 rounded-xl shadow-sm border border-slate-100 gap-4">
+              <div className="flex items-center gap-6 flex-wrap">
+                <div>
+                  <h1 className="text-2xl font-bold flex items-center gap-2 text-indigo-900">
+                    <Activity className="text-indigo-600" />
+                    Time Tracker Pro
+                  </h1>
+                  <p className="text-slate-500 text-sm mt-1">Gerencie as suas atividades e métricas</p>
+                </div>
+                
+                {/* Navegação por Abas (Apenas visível se logado) */}
+                {isLoggedIn && (
+                  <div className="flex bg-slate-100 p-1 rounded-lg">
+                    <button
+                      onClick={() => setActiveTab('dashboard')}
+                      className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === 'dashboard' ? 'bg-white shadow-sm text-indigo-700' : 'text-slate-600 hover:text-indigo-600'}`}
+                    >
+                      <LayoutDashboard size={16} /> Principal
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('motivos')}
+                      className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === 'motivos' ? 'bg-white shadow-sm text-indigo-700' : 'text-slate-600 hover:text-indigo-600'}`}
+                    >
+                      <ListPlus size={16} /> Cadastro de Motivos
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('relatorios')}
+                      className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === 'relatorios' ? 'bg-white shadow-sm text-indigo-700' : 'text-slate-600 hover:text-indigo-600'}`}
+                    >
+                      <PieChart size={16} /> Relatórios
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center gap-4 ml-auto">
+                {isLoggedIn ? (
+                  <>
+                    <div className="hidden md:block text-right">
+                      <p className="text-sm text-slate-500">Sessão iniciada por</p>
+                      <p className="font-semibold text-slate-800">Sara</p>
+                    </div>
+                    <button 
+                      onClick={handleLogout}
+                      className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-medium transition-colors"
+                    >
+                      <LogOut size={16} />
+                      Sair
+                    </button>
+                  </>
+                ) : (
+                  <button 
+                    onClick={() => setShowLoginModal(true)}
+                    className="flex items-center gap-2 px-5 py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-sm font-semibold transition-colors border border-indigo-200"
+                  >
+                    <Lock size={16} />
+                    Fazer Login
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* --- CONTEÚDO DA ABA: CADASTRO --- */}
+            {activeTab === 'motivos' && isLoggedIn && (
+              <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm animate-in fade-in duration-300">
+                <h2 className="text-xl font-bold mb-6 text-slate-800 flex items-center gap-2 border-b border-slate-100 pb-4">
+                  <ListPlus className="text-indigo-600" />
+                  Cadastro
+                </h2>
+                
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div className="bg-slate-50 border border-slate-100 rounded-xl p-5">
+                    <h3 className="text-sm font-semibold text-slate-700 mb-3">Motivos de Pausa</h3>
+                    <form onSubmit={handleAddMotivo} className="flex gap-3 mb-6">
+                      <input 
+                        type="text" 
+                        value={novoMotivo}
+                        onChange={(e) => setNovoMotivo(e.target.value)}
+                        placeholder="Escreva um novo motivo (ex: Ida ao banco)"
+                        className="flex-1 border border-slate-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none"
+                        required
+                      />
+                      <button type="submit" className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2.5 rounded-lg font-medium transition-colors">
+                        Adicionar
+                      </button>
+                    </form>
+
+                    <div className="space-y-3">
+                      <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Motivos registados</h4>
+                      {motivos.length === 0 ? (
+                        <p className="text-slate-400 text-sm">Nenhum motivo registado.</p>
+                      ) : (
+                        motivos.map((motivo, index) => (
+                          <div key={index} className="flex items-center justify-between p-3 bg-white border border-slate-100 rounded-lg hover:bg-slate-100 transition-colors">
+                            <span className="font-medium text-slate-700">{motivo}</span>
+                            <button 
+                              onClick={() => handleRemoveMotivo(motivo)}
+                              className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors"
+                              title="Remover motivo"
+                            >
+                              <Trash2 size={18} />
+                            </button>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-50 border border-slate-100 rounded-xl p-5">
+                    <h3 className="text-sm font-semibold text-slate-700 mb-3">Cadastro de Funcionários</h3>
+                    <form onSubmit={handleAddEmployee} className="flex gap-3 mb-6">
+                      <input 
+                        type="text" 
+                        value={newEmployee}
+                        onChange={(e) => setNewEmployee(e.target.value)}
+                        placeholder="Nome do funcionário"
+                        className="flex-1 border border-slate-200 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-indigo-500 outline-none"
+                        required
+                      />
+                      <button type="submit" className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2.5 rounded-lg font-medium transition-colors">
+                        Adicionar
+                      </button>
+                    </form>
+
+                    <div className="space-y-3">
+                      <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Funcionários registados</h4>
+                      {employees.length === 0 ? (
+                        <p className="text-slate-400 text-sm">Nenhum funcionário registado.</p>
+                      ) : (
+                        employees.map((name, index) => (
+                          <div key={index} className="flex items-center justify-between p-3 bg-white border border-slate-100 rounded-lg hover:bg-slate-100 transition-colors">
+                            <div className="flex items-center gap-3">
+                              <span className="font-medium text-slate-700">{name}</span>
+                              {worker === name && <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100">Ativo</span>}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => setWorker(name)}
+                                className="text-indigo-600 hover:text-indigo-800 text-sm font-semibold"
+                              >
+                                Definir
+                              </button>
+                              <button 
+                                onClick={() => handleRemoveEmployee(name)}
+                                className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors"
+                                title="Remover funcionário"
+                              >
+                                <Trash2 size={18} />
+                              </button>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* --- CONTEÚDO DA ABA: RELATÓRIOS (VISÃO EXECUTIVA) --- */}
+            {activeTab === 'relatorios' && isLoggedIn && (
+              <div className="space-y-6 animate-in fade-in duration-300 print:m-0 print:p-0">
+                
+                {/* Header Executivo (Novo) */}
+                <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4 print:shadow-none print:border-none print:p-0 print:mb-8">
+                  <div>
+                    <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+                      <PieChart className="text-indigo-600" />
+                      Relatório Executivo de Desempenho
+                    </h2>
+                    <p className="text-slate-500 mt-1 text-sm">
+                      Análise de produtividade do colaborador: <span className="font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md ml-1">{worker}</span>
+                    </p>
+                  </div>
+                  <button 
+                    onClick={() => window.print()}
+                    className="flex items-center justify-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-medium transition-colors print:hidden"
+                  >
+                    <Printer size={16} /> Exportar / Imprimir
+                  </button>
+                </div>
+                
+                {/* Secção 1: KPIs Gerais do Relatório (Foco em Gestão) */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {/* Eficiência com Status Automático */}
+                  <div className={`p-5 rounded-xl text-white shadow-sm flex flex-col justify-between ${eficiencia >= 80 ? 'bg-gradient-to-br from-emerald-500 to-emerald-600' : eficiencia >= 60 ? 'bg-gradient-to-br from-orange-400 to-orange-500' : 'bg-gradient-to-br from-red-500 to-red-600'}`}>
+                    <div className="flex justify-between items-start mb-4">
+                      <p className="text-white/90 font-medium text-sm">Índice de Eficiência</p>
+                      {eficiencia >= 80 ? <Award size={20} className="text-white/80" /> : <AlertCircle size={20} className="text-white/80" />}
+                    </div>
+                    <div>
+                      <p className="text-4xl font-bold">{eficiencia}%</p>
+                      <p className="text-xs text-white/80 mt-1 font-medium bg-white/20 inline-block px-2 py-0.5 rounded-full">
+                        {eficiencia >= 80 ? 'Alta Performance' : eficiencia >= 60 ? 'Desempenho Regular' : 'Atenção Necessária'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="bg-white p-5 rounded-xl border border-slate-100 shadow-sm flex flex-col justify-between">
+                    <div className="flex justify-between items-start mb-4">
+                      <p className="text-slate-500 font-medium text-sm">Tempo Líquido (Focado)</p>
+                      <Target size={20} className="text-indigo-500" />
+                    </div>
+                    <div>
+                      <p className="text-2xl font-bold text-slate-800">{calculateDurationStr(totalProdutivoMs)}</p>
+                      <p className="text-xs text-slate-400 mt-1">Horas reais de trabalho</p>
+                    </div>
+                  </div>
+
+                  <div className="bg-white p-5 rounded-xl border border-slate-100 shadow-sm flex flex-col justify-between">
+                    <div className="flex justify-between items-start mb-4">
+                      <p className="text-slate-500 font-medium text-sm">Tempo de Ociosidade</p>
+                      <Coffee size={20} className="text-orange-500" />
+                    </div>
+                    <div>
+                      <p className="text-2xl font-bold text-slate-800">{calculateDurationStr(totalPauseMs)}</p>
+                      <p className="text-xs text-slate-400 mt-1">Pausas e interrupções</p>
+                    </div>
+                  </div>
+
+                  <div className="bg-white p-5 rounded-xl border border-slate-100 shadow-sm flex flex-col justify-between">
+                    <div className="flex justify-between items-start mb-4">
+                      <p className="text-slate-500 font-medium text-sm">Entregas Concluídas</p>
+                      <CheckSquare size={20} className="text-blue-500" />
+                    </div>
+                    <div>
+                      <p className="text-2xl font-bold text-slate-800">{records.length}</p>
+                      <p className="text-xs text-slate-400 mt-1">Volume de tarefas executadas</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 print:block print:space-y-6">
+                  {/* Secção 2: Gráfico de Barras Comparativo */}
+                  <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm lg:col-span-2 print:border-none print:shadow-none print:p-0">
+                    <h2 className="text-lg font-bold mb-6 text-slate-800 flex items-center gap-2">
+                      <BarChart2 className="text-indigo-600" size={20} />
+                      Distribuição de Esforço por Atividade
+                    </h2>
+                    
+                    <div className="space-y-6 mt-4">
+                      {statsPorTarefa.map(stat => (
+                        <div key={stat.nome} className="flex items-center gap-4">
+                          <div className="w-1/3 text-sm font-medium text-slate-700 truncate" title={stat.nome}>
+                            {stat.nome}
+                          </div>
+                          <div className="w-2/3 flex items-center gap-3">
+                            <div className="flex-1 h-4 bg-slate-100 rounded-md overflow-hidden flex relative">
+                              <div 
+                                className={`h-full rounded-md transition-all duration-1000 ease-out ${stat.eficiencia >= 80 ? 'bg-emerald-500' : stat.eficiencia >= 60 ? 'bg-indigo-500' : 'bg-orange-400'}`} 
+                                style={{ 
+                                  width: `${(stat.produtivoMs / maxProdutivoMs) * 100}%`,
+                                  minWidth: stat.produtivoMs > 0 ? '4px' : '0'
+                                }}
+                              ></div>
+                            </div>
+                            <div className="w-24 flex flex-col text-right">
+                              <span className="text-sm font-bold text-slate-700 leading-none">
+                                {calculateDurationStr(stat.produtivoMs)}
+                              </span>
+                              <span className="text-[10px] text-slate-400 font-medium mt-1">LÍQUIDO</span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Secção 3: Detalhamento por Tarefa (Cards menores) */}
+                  <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm flex flex-col gap-4 max-h-[450px] overflow-y-auto print:max-h-none print:border-none print:shadow-none print:p-0">
+                    <h2 className="text-lg font-bold mb-2 text-slate-800 flex items-center gap-2 sticky top-0 bg-white pb-2 border-b border-slate-50 z-10 print:static print:border-b-2 print:border-slate-800">
+                      <Activity className="text-indigo-600" size={20} />
+                      Análise Granular
+                    </h2>
+                    
+                    {statsPorTarefa.map((stat, idx) => (
+                      <div key={idx} className="bg-slate-50 p-4 rounded-lg border border-slate-200 hover:border-indigo-200 transition-colors print:bg-white print:border-slate-300">
+                        <div className="flex justify-between items-center mb-3">
+                          <h3 className="font-bold text-slate-800 text-sm truncate pr-2">{stat.nome}</h3>
+                          <span className="text-xs bg-white border border-slate-200 text-slate-600 px-2 py-0.5 rounded-full font-bold shadow-sm">
+                            {stat.count} execuções
+                          </span>
+                        </div>
+                        
+                        <div className="space-y-2 mb-3 bg-white p-2 rounded border border-slate-100 print:border-none print:p-0">
+                          <div className="text-xs flex justify-between items-center">
+                            <span className="text-slate-500 font-medium">Ociosidade (Pausa)</span>
+                            <span className="font-bold text-orange-600">{calculateDurationStr(stat.pausaMs)}</span>
+                          </div>
+                          <div className="text-xs flex justify-between items-center">
+                            <span className="text-slate-500 font-medium">Trabalho Real</span>
+                            <span className="font-bold text-emerald-600">{calculateDurationStr(stat.produtivoMs)}</span>
+                          </div>
+                        </div>
+                        
+                        <div className="pt-1">
+                          <div className="flex justify-between items-center mb-1">
+                            <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Aproveitamento</span>
+                            <span className={`text-xs font-bold ${stat.eficiencia >= 80 ? 'text-emerald-600' : stat.eficiencia >= 60 ? 'text-indigo-600' : 'text-orange-500'}`}>
+                              {stat.eficiencia}%
+                            </span>
+                          </div>
+                          <div className="w-full bg-slate-200 rounded-full h-1.5">
+                            <div 
+                              className={`h-1.5 rounded-full ${stat.eficiencia >= 80 ? 'bg-emerald-500' : stat.eficiencia >= 60 ? 'bg-indigo-500' : 'bg-orange-500'}`} 
+                              style={{ width: `${stat.eficiencia}%` }}
+                            ></div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Registro de Pausas e Motivos */}
+                <div>
+                  <h2 className="text-lg font-bold mb-4 text-slate-800 flex items-center gap-2 justify-between border-b border-slate-100 pb-4">
+                    <span className="flex items-center gap-2">
+                      <Coffee className="text-indigo-600" size={20} />
+                      Registro de Pausas e Motivos
+                    </span>
+                    <button
+                      onClick={handleExportPausas}
+                      disabled={!pausasDetalhadas.length}
+                      className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg border border-slate-200 bg-white hover:bg-slate-50 disabled:text-slate-300 disabled:border-slate-100"
+                    >
+                      Exportar CSV
+                    </button>
+                  </h2>
+                  {pausasDetalhadas.length === 0 ? (
+                    <p className="text-slate-400 text-sm mt-4">Sem pausas registadas.</p>
+                  ) : (
+                    <div className="overflow-x-auto mt-4 bg-white rounded-xl border border-slate-100 shadow-sm">
+                      <table className="w-full text-left text-sm text-slate-600">
+                        <thead className="bg-slate-50 text-slate-500 uppercase text-xs font-semibold">
+                          <tr>
+                            <th className="px-4 py-2">Data</th>
+                            <th className="px-4 py-2">Funcionário</th>
+                            <th className="px-4 py-2">Tarefa</th>
+                            <th className="px-4 py-2">Motivo</th>
+                            <th className="px-4 py-2">Início</th>
+                            <th className="px-4 py-2">Fim</th>
+                            <th className="px-4 py-2">Duração</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {pausasDetalhadas.map(p => (
+                            <tr key={p.key} className="hover:bg-slate-50 transition-colors">
+                              <td className="px-4 py-2 whitespace-nowrap">{formatDate(p.date)}</td>
+                              <td className="px-4 py-2 font-medium text-slate-800">{p.worker}</td>
+                              <td className="px-4 py-2">{p.task}</td>
+                              <td className="px-4 py-2 text-slate-700">{p.reason || '--'}</td>
+                              <td className="px-4 py-2">{formatTime(p.startTime)}</td>
+                              <td className="px-4 py-2">{formatTime(p.endTime)}</td>
+                              <td className="px-4 py-2 font-medium text-orange-600">{calculateDurationStr(p.durationMs)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* --- CONTEÚDO DA ABA: DASHBOARD / PRINCIPAL --- */}
+            {activeTab === 'dashboard' && (
+              <div className="space-y-6 animate-in fade-in duration-300">
+                {/* Dashboard Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="bg-white p-5 rounded-xl border border-slate-100 shadow-sm flex items-center gap-4">
+                    <div className="p-3 bg-orange-50 text-orange-600 rounded-lg"><Coffee size={24} /></div>
+                    <div>
+                      <p className="text-sm text-slate-500 font-medium">Tempo em Pausa</p>
+                      <p className="text-2xl font-bold text-slate-800">{calculateDurationStr(totalPauseMs)}</p>
+                    </div>
+                  </div>
+
+                  <div className="bg-white p-5 rounded-xl border border-slate-100 shadow-sm flex items-center gap-4">
+                    <div className="p-3 bg-green-50 text-green-600 rounded-lg"><CheckSquare size={24} /></div>
+                    <div>
+                      <p className="text-sm text-slate-500 font-medium">Tempo Produtivo</p>
+                      <p className="text-2xl font-bold text-slate-800">{calculateDurationStr(totalProdutivoMs)}</p>
+                    </div>
+                  </div>
+
+                  <div className="bg-white p-5 rounded-xl border border-slate-100 shadow-sm flex items-center gap-4">
+                    <div className="p-3 bg-indigo-50 text-indigo-600 rounded-lg"><BarChart2 size={24} /></div>
+                    <div>
+                      <p className="text-sm text-slate-500 font-medium">Eficiência</p>
+                      <p className="text-2xl font-bold text-slate-800">{eficiencia}%</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Painel de Ações */}
+                <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm">
+                  <h2 className="text-lg font-semibold mb-4 text-slate-800">Controle de Tarefa</h2>
+                  
+                  <div className="flex flex-col md:flex-row gap-4 mb-6">
+                    <div className="flex-1">
+                      <label className="block text-sm font-medium text-slate-600 mb-1">Funcionário</label>
+                      <select
+                        value={worker}
+                        onChange={(e) => setWorker(e.target.value)}
+                        disabled={activeTask !== null || employees.length === 0}
+                        className="w-full border border-slate-200 rounded-lg px-4 py-2 focus:ring-2 focus:ring-indigo-500 outline-none disabled:bg-slate-50"
+                      >
+                        {employees.length === 0 && <option value="">Sem funcionários</option>}
+                        {employees.map(name => (
+                          <option key={name} value={name}>{name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="flex-1">
+                      <label className="block text-sm font-medium text-slate-600 mb-1">Tarefa</label>
+                      <select 
+                        value={taskName}
+                        onChange={(e) => setTaskName(e.target.value)}
+                        disabled={activeTask !== null}
+                        className="w-full border border-slate-200 rounded-lg px-4 py-2 focus:ring-2 focus:ring-indigo-500 outline-none disabled:bg-slate-50"
+                      >
+                        {tasks.map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                    </div>
+                    <div className="flex-1">
+                      <label className="block text-sm font-medium text-slate-600 mb-1">Quantidade concluída</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={taskQuantity}
+                        onChange={(e) => handleQuantityChange(e.target.value)}
+                        className="w-full border border-slate-200 rounded-lg px-4 py-2 focus:ring-2 focus:ring-indigo-500 outline-none"
+                        placeholder="Ex: 12 unidades"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-end gap-3 bg-slate-50 p-4 rounded-lg border border-slate-100">
+                    <button 
+                      onClick={handleStart} 
+                      disabled={activeTask !== null}
+                      className="flex items-center gap-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white rounded-lg font-medium transition-colors h-[46px]"
+                    >
+                      <Play size={18} /> Iniciar Tarefa
+                    </button>
+                    
+                    {/* Seletor de Motivo acoplado ao botão de Pausa */}
+                    <div className="flex items-center bg-white border border-slate-200 rounded-lg overflow-hidden h-[46px]">
+                      <select 
+                        value={selectedMotivo}
+                        onChange={(e) => setSelectedMotivo(e.target.value)}
+                        disabled={!activeTask || (activeTask.pauses || []).some(p => !p.endTime) || motivos.length === 0}
+                        className="px-3 h-full bg-transparent border-r border-slate-200 text-sm text-slate-600 outline-none disabled:bg-slate-50"
+                      >
+                        {motivos.length === 0 && <option value="">Sem motivos</option>}
+                        {motivos.map(m => <option key={m} value={m}>{m}</option>)}
+                      </select>
+                      <button 
+                        onClick={handlePause} 
+                        disabled={!activeTask || (activeTask.pauses || []).some(p => !p.endTime) || motivos.length === 0}
+                        className="flex items-center gap-2 px-4 h-full bg-orange-500 hover:bg-orange-600 disabled:bg-slate-200 disabled:text-slate-400 text-white font-medium transition-colors"
+                      >
+                        <Pause size={18} /> Pausa
+                      </button>
+                    </div>
+
+                    <button 
+                      onClick={handleReturn} 
+                      disabled={!activeTask || !(activeTask.pauses || []).some(p => !p.endTime)}
+                      className="flex items-center gap-2 px-6 py-3 bg-blue-500 hover:bg-blue-600 disabled:bg-slate-200 disabled:text-slate-400 text-white rounded-lg font-medium transition-colors h-[46px]"
+                    >
+                      <RotateCcw size={18} /> Retorno
+                    </button>
+
+                    <button 
+                      onClick={handleEnd} 
+                      disabled={!activeTask}
+                      className="flex items-center gap-2 px-6 py-3 bg-emerald-500 hover:bg-emerald-600 disabled:bg-slate-200 disabled:text-slate-400 text-white rounded-lg font-medium transition-colors ml-auto h-[46px]"
+                    >
+                      <CheckSquare size={18} /> Finalizar Tarefa
+                    </button>
+                  </div>
+
+                  {/* Indicador de Status da Tarefa Ativa */}
+                  {activeTask && (
+                    <div className="mt-6 p-4 bg-indigo-50 border border-indigo-100 rounded-lg flex items-center justify-between">
+                      <div>
+                        <span className="text-indigo-800 font-semibold">{activeTask.task}</span>
+                        <span className="text-indigo-600 text-sm ml-2">({activeTask.worker})</span>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        <span className="text-sm font-medium text-indigo-700 bg-white px-3 py-1 rounded-full shadow-sm">
+                          Início: {formatTime(activeTask.startTime)}
+                        </span>
+                        <span className={`text-sm font-medium px-3 py-1 rounded-full shadow-sm flex items-center gap-1 ${
+                          activeTask.status === 'Em pausa' ? 'bg-orange-100 text-orange-700' : 'bg-green-100 text-green-700'
+                        }`}>
+                          Status: {activeTask.status} {activeTask.pauseReason && `(${activeTask.pauseReason})`}
+                          {activeTask.status === 'Em pausa' && (activeTask.pauses || []).some(p => !p.endTime) && (
+                            <span className="ml-1 font-bold">
+                              ⏱ {formatLiveDuration(new Date((activeTask.pauses || []).find(p => !p.endTime)?.startTime || activeTask.startTime).getTime(), now)}
+                            </span>
+                          )}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Histórico / Tabela */}
+                <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
+                  <div className="px-6 py-4 border-b border-slate-100">
+                    <h2 className="text-lg font-semibold text-slate-800">Registro de Atividades</h2>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-sm text-slate-600">
+                      <thead className="bg-slate-50 text-slate-500 uppercase text-xs font-semibold">
+                        <tr>
+                          <th className="px-6 py-3">Data</th>
+                          <th className="px-6 py-3">Funcionário</th>
+                          <th className="px-6 py-3">Tarefa</th>
+                          <th className="px-6 py-3">Quantidade</th>
+                          <th className="px-6 py-3">Início</th>
+                          <th className="px-6 py-3">Pausa</th>
+                          <th className="px-6 py-3">Retorno</th>
+                          <th className="px-6 py-3">Fim</th>
+                          <th className="px-6 py-3">Tempo Líquido</th>
+                          <th className="px-6 py-3">Qtd/h</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {records.length === 0 ? (
+                          <tr>
+                            <td colSpan="10" className="px-6 py-8 text-center text-slate-400">
+                              Nenhuma atividade registada ainda.
+                            </td>
+                          </tr>
+                        ) : (
+                          records.map((record) => (
+                            <tr key={record.id} className="hover:bg-slate-50 transition-colors">
+                              <td className="px-6 py-3 whitespace-nowrap">{formatDate(record.date)}</td>
+                              <td className="px-6 py-3 font-medium text-slate-800">{record.worker}</td>
+                              <td className="px-6 py-3">{record.task}</td>
+                              <td className="px-6 py-3 font-medium text-slate-700">{record.quantity ?? '-'}</td>
+                              <td className="px-6 py-3">{formatTime(record.startTime)}</td>
+                              <td className="px-6 py-3">
+                                <span className="font-medium text-orange-600">
+                                  {record.pauseMs > 0 ? calculateDurationStr(record.pauseMs) : '--:--:--'}
+                                </span>
+                              </td>
+                              <td className="px-6 py-3">{formatTime(record.returnTime)}</td>
+                              <td className="px-6 py-3">{formatTime(record.endTime)}</td>
+                              <td className="px-6 py-3 font-medium text-emerald-600">{calculateDurationStr(record.produtivoMs)}</td>
+                              <td className="px-6 py-3 font-medium text-slate-700">{record.quantidadePorHora != null ? record.quantidadePorHora.toFixed(2) : '--'}</td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+
+          </div>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
 </body>
 </html>
