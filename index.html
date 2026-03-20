@@ -218,6 +218,46 @@
                 console.warn('Erro ao ler localStorage de fallback:', e.message);
               }
             }
+
+            // Carregar configurações (tasks, motivos, employees)
+            try {
+              const tasksDoc = await currentDb.collection('config').doc('tasks').get();
+              if (tasksDoc.exists && isMounted) {
+                const data = tasksDoc.data();
+                if (data && data.list) {
+                  setTasks(data.list);
+                  console.log('✅ Carregadas tasks do Firestore');
+                }
+              }
+            } catch (e) {
+              console.warn('Erro ao carregar tasks do Firestore:', e.message);
+            }
+
+            try {
+              const motivosDoc = await currentDb.collection('config').doc('motivos').get();
+              if (motivosDoc.exists && isMounted) {
+                const data = motivosDoc.data();
+                if (data && data.list) {
+                  setMotivos(data.list);
+                  console.log('✅ Carregados motivos do Firestore');
+                }
+              }
+            } catch (e) {
+              console.warn('Erro ao carregar motivos do Firestore:', e.message);
+            }
+
+            try {
+              const employeesDoc = await currentDb.collection('config').doc('employees').get();
+              if (employeesDoc.exists && isMounted) {
+                const data = employeesDoc.data();
+                if (data && data.list) {
+                  setEmployees(data.list);
+                  console.log('✅ Carregados employees do Firestore');
+                }
+              }
+            } catch (e) {
+              console.warn('Erro ao carregar employees do Firestore:', e.message);
+            }
           } catch (error) {
             retryCount++;
             if (retryCount < maxRetries) {
@@ -622,6 +662,36 @@
         }, 2000);
         return () => clearTimeout(saveTimer);
       }, [records]);
+
+      // Salvar tasks no Firestore
+      useEffect(() => {
+        if (db) {
+          db.collection('config').doc('tasks').set({
+            list: tasks,
+            updatedAt: new Date().toISOString()
+          }).catch((error) => console.warn('Erro ao salvar tasks:', error));
+        }
+      }, [tasks]);
+
+      // Salvar motivos no Firestore
+      useEffect(() => {
+        if (db) {
+          db.collection('config').doc('motivos').set({
+            list: motivos,
+            updatedAt: new Date().toISOString()
+          }).catch((error) => console.warn('Erro ao salvar motivos:', error));
+        }
+      }, [motivos]);
+
+      // Salvar employees no Firestore
+      useEffect(() => {
+        if (db) {
+          db.collection('config').doc('employees').set({
+            list: employees,
+            updatedAt: new Date().toISOString()
+          }).catch((error) => console.warn('Erro ao salvar employees:', error));
+        }
+      }, [employees]);
 
       // Sincronizar registros em tempo real com Firestore (listener) - Sempre ativo, com ou sem login
       useEffect(() => {
