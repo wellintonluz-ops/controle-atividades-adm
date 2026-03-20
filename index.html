@@ -665,6 +665,7 @@
 
       // Salvar tasks no Firestore
       useEffect(() => {
+        initializeFirebase();
         if (db) {
           db.collection('config').doc('tasks').set({
             list: tasks,
@@ -675,6 +676,7 @@
 
       // Salvar motivos no Firestore
       useEffect(() => {
+        initializeFirebase();
         if (db) {
           db.collection('config').doc('motivos').set({
             list: motivos,
@@ -685,6 +687,7 @@
 
       // Salvar employees no Firestore
       useEffect(() => {
+        initializeFirebase();
         if (db) {
           db.collection('config').doc('employees').set({
             list: employees,
@@ -709,6 +712,7 @@
             }
             
             if (currentDb) {
+              let tasksUnsub, motivosUnsub, employeesUnsub;
               // Listener para mudanças em tempo real na coleção 'records'
               // Ativo SEMPRE, independente de login (registros são públicos)
               unsubscribe = currentDb.collection('records').onSnapshot(
@@ -746,6 +750,37 @@
                   console.warn('Erro no listener de sincronização:', error.message);
                 }
               );
+
+              // Listeners para config em tempo real
+              tasksUnsub = currentDb.collection('config').doc('tasks').onSnapshot((doc) => {
+                if (doc.exists) {
+                  const data = doc.data();
+                  if (data && data.list) {
+                    setTasks(data.list);
+                    console.log('Tasks atualizadas em tempo real');
+                  }
+                }
+              }, (error) => console.warn('Erro no listener de tasks:', error));
+
+              motivosUnsub = currentDb.collection('config').doc('motivos').onSnapshot((doc) => {
+                if (doc.exists) {
+                  const data = doc.data();
+                  if (data && data.list) {
+                    setMotivos(data.list);
+                    console.log('Motivos atualizados em tempo real');
+                  }
+                }
+              }, (error) => console.warn('Erro no listener de motivos:', error));
+
+              employeesUnsub = currentDb.collection('config').doc('employees').onSnapshot((doc) => {
+                if (doc.exists) {
+                  const data = doc.data();
+                  if (data && data.list) {
+                    setEmployees(data.list);
+                    console.log('Employees atualizados em tempo real');
+                  }
+                }
+              }, (error) => console.warn('Erro no listener de employees:', error));
             }
           } catch (error) {
             console.warn('Erro ao configurar sincronização em tempo real:', error.message);
@@ -758,6 +793,15 @@
         return () => {
           if (unsubscribe) {
             unsubscribe();
+          }
+          if (tasksUnsub) {
+            tasksUnsub();
+          }
+          if (motivosUnsub) {
+            motivosUnsub();
+          }
+          if (employeesUnsub) {
+            employeesUnsub();
           }
         };
       }, []);
