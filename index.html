@@ -124,6 +124,8 @@
       // Ref para rastrear sincronização e evitar loops infinitos
       const lastSyncedRecordsRef = React.useRef([]);
       const isSyncingRef = React.useRef(false);
+      // Ref para saber qual foi o último worker com tarefa ativa (para poder limpar ao concluir)
+      const lastActiveTaskWorkerRef = React.useRef(null);
       
       // Função para comparar registros (evita updates desnecessários)
       const recordsChanged = (newRecords) => {
@@ -347,25 +349,37 @@
               }
             });
             
-            if (isMounted && loadedRecords.length > 0) {
-              // Ordenar por data (mais recentes primeiro)
-              loadedRecords.sort((a, b) => new Date(b.date) - new Date(a.date));
-              setRecords(loadedRecords);
-              console.log(`✅ Carregados ${loadedRecords.length} registros do Firestore`);
-            } else if (isMounted) {
-              // fallback localStorage
+            if (isMounted) {
+              // Mesclar Firestore + localStorage: nunca descartar registros locais não salvos ainda
+              let localRecords = [];
               try {
                 const local = localStorage.getItem('local_records');
                 if (local) {
                   const parsed = JSON.parse(local);
-                  if (Array.isArray(parsed) && parsed.length > 0) {
-                    parsed.sort((a, b) => new Date(b.date) - new Date(a.date));
-                    setRecords(parsed);
-                    console.log(`✅ Carregados ${parsed.length} registros do localStorage (fallback)`);
-                  }
+                  if (Array.isArray(parsed)) localRecords = parsed;
                 }
-              } catch (e) {
-                console.warn('Erro ao ler localStorage de fallback:', e.message);
+              } catch (e) {}
+
+              const firestoreIds = new Set(loadedRecords.map(r => r.id));
+              const onlyLocalRecords = localRecords.filter(r => r.id && !firestoreIds.has(r.id));
+              const mergedRecords = [...loadedRecords, ...onlyLocalRecords];
+
+              if (mergedRecords.length > 0) {
+                mergedRecords.sort((a, b) => new Date(b.date) - new Date(a.date));
+                setRecords(mergedRecords);
+                console.log(`✅ ${loadedRecords.length} do Firestore + ${onlyLocalRecords.length} exclusivos do localStorage`);
+
+                // Sincronizar para o Firestore os registros que só existem localmente
+                if (onlyLocalRecords.length > 0) {
+                  onlyLocalRecords.forEach(record => {
+                    saveToFirestoreWithRetry('records', String(record.id), {
+                      ...record,
+                      updatedAt: new Date().toISOString()
+                    }, 2);
+                  });
+                }
+              } else {
+                console.log('Nenhum registro encontrado no Firestore ou localStorage');
               }
             }
           } catch (error) {
@@ -616,6 +630,22 @@
         setRecords(prevRecords => [completedTask, ...prevRecords]);
         setActiveTask(null);
         setTaskQuantity('');
+
+        // Salvar imediatamente no Firestore (não depender apenas do debounce de 2s)
+        initializeFirebase();
+        if (db) {
+          db.collection('records').doc(String(completedTask.id)).set({
+            ...completedTask,
+            updatedAt: new Date().toISOString()
+          }).then(() => console.log('✅ Registro salvo imediatamente:', completedTask.id))
+            .catch(err => console.error('Erro ao salvar registro finalizado:', err));
+        }
+        // Salvar no localStorage imediatamente também
+        try {
+          const local = localStorage.getItem('local_records');
+          const currentRecords = local ? JSON.parse(local) : [];
+          localStorage.setItem('local_records', JSON.stringify([completedTask, ...currentRecords]));
+        } catch (e) {}
       };
 
       const handleDeleteRecord = (recordId) => {
@@ -835,6 +865,97 @@
         })();
       }, [employees]);
 
+      // ─────────────────────────────────────────────
+      // PERSISTÊNCIA DA TAREFA ATIVA
+      // Salva no localStorage E no Firestore toda vez que activeTask mudar,
+      // para que sobreviva a refreshes, fechamento de aba e troca de computador.
+      // ─────────────────────────────────────────────
+      useEffect(() => {
+        const workerKey = activeTask ? activeTask.worker : lastActiveTaskWorkerRef.current;
+
+        // 1. localStorage imediato
+        try {
+          if (activeTask) {
+            localStorage.setItem('active_task_' + activeTask.worker, JSON.stringify(activeTask));
+            lastActiveTaskWorkerRef.current = activeTask.worker;
+          } else if (workerKey) {
+            localStorage.removeItem('active_task_' + workerKey);
+          }
+        } catch (e) {}
+
+        // 2. Firestore imediato
+        initializeFirebase();
+        if (!db || !workerKey) {
+          if (!activeTask) lastActiveTaskWorkerRef.current = null;
+          return;
+        }
+
+        if (activeTask) {
+          db.collection('activeTasks').doc(String(workerKey)).set({
+            ...activeTask,
+            updatedAt: new Date().toISOString()
+          }).catch(err => console.warn('Erro ao persistir tarefa ativa:', err));
+        } else {
+          db.collection('activeTasks').doc(String(workerKey)).delete()
+            .catch(err => console.warn('Erro ao limpar tarefa ativa:', err));
+          lastActiveTaskWorkerRef.current = null;
+        }
+      }, [activeTask]);
+
+      // ─────────────────────────────────────────────
+      // RESTAURAR TAREFA ATIVA AO SELECIONAR FUNCIONÁRIO
+      // Quando o worker muda (e não há tarefa ativa), verifica se há uma tarefa
+      // em andamento salva para esse funcionário e a restaura automaticamente.
+      // ─────────────────────────────────────────────
+      useEffect(() => {
+        if (activeTask) return;  // já tem tarefa ativa, não sobrescrever
+        if (!worker) return;
+
+        // 1. Verificar localStorage (mais rápido)
+        try {
+          const saved = localStorage.getItem('active_task_' + worker);
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            if (parsed && parsed.worker === worker && !parsed.endTime) {
+              setActiveTask(parsed);
+              lastActiveTaskWorkerRef.current = worker;
+              console.log('✅ Tarefa ativa restaurada do localStorage para', worker, ':', parsed.task);
+              return;
+            } else {
+              localStorage.removeItem('active_task_' + worker); // entrada inválida
+            }
+          }
+        } catch (e) {}
+
+        // 2. Verificar Firestore como fallback
+        const restoreFromFirestore = async () => {
+          initializeFirebase();
+          let currentDb = db;
+          let w = 0;
+          while (!currentDb && w < 20) {
+            await new Promise(res => setTimeout(res, 200));
+            currentDb = db;
+            w++;
+          }
+          if (!currentDb) return;
+          try {
+            const docSnap = await currentDb.collection('activeTasks').doc(String(worker)).get();
+            if (docSnap.exists) {
+              const data = docSnap.data();
+              if (data && data.id && !data.endTime) {
+                setActiveTask(data);
+                lastActiveTaskWorkerRef.current = worker;
+                console.log('✅ Tarefa ativa restaurada do Firestore para', worker, ':', data.task);
+              }
+            }
+          } catch (e) {
+            console.warn('Erro ao restaurar tarefa ativa:', e.message);
+          }
+        };
+
+        restoreFromFirestore();
+      }, [worker]); // eslint-disable-line react-hooks/exhaustive-deps
+
       // Sincronizar registros em tempo real com Firestore (listener) - Sempre ativo, com ou sem login
       useEffect(() => {
         let unsubscribe;
@@ -857,33 +978,32 @@
               unsubscribe = currentDb.collection('records').onSnapshot(
                 (querySnapshot) => {
                   console.log('Listener onSnapshot disparado, docs:', querySnapshot.size);
-                  const loadedRecords = [];
+                  const firestoreRecords = [];
                   querySnapshot.forEach((doc) => {
                     const data = doc.data();
                     if (data && data.id) {
-                      loadedRecords.push(data);
+                      firestoreRecords.push(data);
                     }
                   });
-                  
-                  if (loadedRecords.length > 0) {
-                    // Ordenar por data (mais recentes primeiro)
-                    loadedRecords.sort((a, b) => new Date(b.date) - new Date(a.date));
-                    
-                    // Verificar se realmente houve mudanças antes de atualizar
-                    if (recordsChanged(loadedRecords)) {
-                      console.log(`🔄 Sincronizados ${loadedRecords.length} registros em tempo real (NOVOS DADOS)`);
-                      isSyncingRef.current = true;
-                      lastSyncedRecordsRef.current = loadedRecords;
-                      setRecords(loadedRecords);
-                      
-                      // Permitir save novamente após a sincronização
-                      setTimeout(() => {
-                        isSyncingRef.current = false;
-                      }, 500);
-                    } else {
-                      console.log(`ℹ️ Listener disparado, mas sem changes (mesmos dados)`);
-                    }
-                  }
+
+                  // Mesclar: manter registros locais que ainda não chegaram ao Firestore
+                  // Isso evita a race condition onde o listener sobrescreve um registro
+                  // recém-concluído antes de ele ser salvo no Firestore
+                  setRecords(prevRecords => {
+                    const firestoreIds = new Set(firestoreRecords.map(r => r.id));
+                    const localOnly = prevRecords.filter(r => !firestoreIds.has(r.id));
+                    const merged = [...firestoreRecords, ...localOnly];
+                    merged.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+                    // Evitar re-render desnecessário se os dados não mudaram
+                    const currentIds = JSON.stringify(prevRecords.map(r => r.id));
+                    const newIds = JSON.stringify(merged.map(r => r.id));
+                    if (currentIds === newIds) return prevRecords;
+
+                    console.log(`🔄 Records sincronizados: ${firestoreRecords.length} Firestore + ${localOnly.length} local`);
+                    lastSyncedRecordsRef.current = merged;
+                    return merged;
+                  });
                 },
                 (error) => {
                   console.warn('Erro no listener de sincronização:', error.message);
