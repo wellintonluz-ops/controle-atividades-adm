@@ -124,8 +124,8 @@
       // Ref para rastrear sincronização e evitar loops infinitos
       const lastSyncedRecordsRef = React.useRef([]);
       const isSyncingRef = React.useRef(false);
-      // Ref para saber qual foi o último worker com tarefa ativa (para poder limpar ao concluir)
-      const lastActiveTaskWorkerRef = React.useRef(null);
+      // Ref para saber qual foi o último perfil com tarefa ativa (para poder limpar ao concluir)
+      const lastActiveTaskProfileRef = React.useRef(null);
       
       // Função para comparar registros (evita updates desnecessários)
       const recordsChanged = (newRecords) => {
@@ -138,12 +138,16 @@
       const [isLoggedIn, setIsLoggedIn] = useState(false);
       const [showLoginModal, setShowLoginModal] = useState(false);
       const [activeTab, setActiveTab] = useState('dashboard');
+      const [loggedInUser, setLoggedInUser] = useState('');
       
       // Dados do utilizador
       const [worker, setWorker] = useState('Daniel');
       const [loginInput, setLoginInput] = useState('');
       const [passwordInput, setPasswordInput] = useState('');
       const [loginError, setLoginError] = useState('');
+      const isDanielRestricted = loggedInUser === 'daniel';
+      const workerFromLogin = loggedInUser ? loggedInUser.charAt(0).toUpperCase() + loggedInUser.slice(1) : '';
+      const currentWorker = workerFromLogin || worker;
       
       // Tarefas e Motivos - carregar de localStorage ou usar defaults
       const [tasks, setTasks] = useState(() => {
@@ -211,6 +215,18 @@
           setSelectedMotivo(motivos[0]);
         }
       }, [motivos, selectedMotivo]);
+
+      useEffect(() => {
+        if (isLoggedIn && isDanielRestricted && activeTab !== 'dashboard') {
+          setActiveTab('dashboard');
+        }
+      }, [isLoggedIn, isDanielRestricted, activeTab]);
+
+      useEffect(() => {
+        if (workerFromLogin && worker !== workerFromLogin) {
+          setWorker(workerFromLogin);
+        }
+      }, [workerFromLogin]);
 
       // Refs para evitar loops nos listeners
       const tasksRef = React.useRef(tasks);
@@ -430,9 +446,15 @@
       const handleLogin = (e) => {
         e.preventDefault();
         setLoginError('');
+
+        const normalizedLogin = loginInput.trim().toLowerCase();
+        const isValidLogin =
+          (normalizedLogin === 'sara' && passwordInput === '7842') ||
+          (normalizedLogin === 'daniel' && passwordInput === '102030');
         
-        if (loginInput.trim().toLowerCase() === 'sara' && passwordInput === '7842') {
-          setWorker('Daniel'); 
+        if (isValidLogin) {
+          setLoggedInUser(normalizedLogin);
+          setWorker(normalizedLogin.charAt(0).toUpperCase() + normalizedLogin.slice(1)); 
           setIsLoggedIn(true);
           setShowLoginModal(false);
           setPasswordInput(''); 
@@ -478,11 +500,13 @@
       };
 
       const handleLogout = () => {
-        if (activeTask) {
-          alert("Por favor, finalize a tarefa ativa antes de terminar a sessão.");
+        const isTaskPaused = activeTask && (activeTask.pauses || []).some(p => !p.endTime);
+        if (activeTask && !isTaskPaused) {
+          alert("Por favor, pause ou finalize a tarefa ativa antes de terminar a sessão.");
           return;
         }
         setIsLoggedIn(false);
+        setLoggedInUser('');
         setActiveTab('dashboard'); 
       };
 
@@ -524,9 +548,6 @@
 
       const handleRemoveEmployee = (name) => {
         setEmployees(employees.filter(e => e !== name));
-        if (worker === name && employees.length > 1) {
-          setWorker(employees.find(e => e !== name) || 'Daniel');
-        }
       };
 
       const handleQuantityChange = (value) => {
@@ -542,17 +563,23 @@
           return;
         }
 
-        if (!worker) {
-          alert("Selecione um funcionário para iniciar a tarefa.");
+        if (!isLoggedIn || !loggedInUser) {
+          alert("Faça login para iniciar uma tarefa neste perfil.");
+          return;
+        }
+
+        if (!currentWorker) {
+          alert("Não foi possível identificar o funcionário do perfil logado.");
           return;
         }
         
         const newTask = {
           id: Date.now(),
           date: new Date().toISOString(),
-          worker,
+          worker: currentWorker,
           task: taskName,
           quantity: Number(taskQuantity) || 0,
+          ownerLogin: loggedInUser,
           startTime: new Date().toISOString(),
           pauses: [],
           endTime: null,
@@ -871,58 +898,88 @@
       // para que sobreviva a refreshes, fechamento de aba e troca de computador.
       // ─────────────────────────────────────────────
       useEffect(() => {
-        const workerKey = activeTask ? activeTask.worker : lastActiveTaskWorkerRef.current;
+        if (!isLoggedIn || !loggedInUser) return;
+
+        const profileKey = activeTask ? (activeTask.ownerLogin || loggedInUser) : lastActiveTaskProfileRef.current;
+        const shouldClearCurrentProfile = !activeTask && profileKey === loggedInUser;
 
         // 1. localStorage imediato
         try {
           if (activeTask) {
-            localStorage.setItem('active_task_' + activeTask.worker, JSON.stringify(activeTask));
-            lastActiveTaskWorkerRef.current = activeTask.worker;
-          } else if (workerKey) {
-            localStorage.removeItem('active_task_' + workerKey);
+            const taskToSave = { ...activeTask, ownerLogin: activeTask.ownerLogin || loggedInUser };
+            localStorage.setItem('active_task_login_' + taskToSave.ownerLogin, JSON.stringify(taskToSave));
+            lastActiveTaskProfileRef.current = taskToSave.ownerLogin;
+          } else if (shouldClearCurrentProfile) {
+            localStorage.removeItem('active_task_login_' + profileKey);
           }
         } catch (e) {}
 
         // 2. Firestore imediato
         initializeFirebase();
-        if (!db || !workerKey) {
-          if (!activeTask) lastActiveTaskWorkerRef.current = null;
+        if (!db || !profileKey) {
+          if (shouldClearCurrentProfile) lastActiveTaskProfileRef.current = null;
           return;
         }
 
         if (activeTask) {
-          db.collection('activeTasks').doc(String(workerKey)).set({
+          db.collection('activeTasks').doc(String(profileKey)).set({
             ...activeTask,
+            ownerLogin: activeTask.ownerLogin || loggedInUser,
             updatedAt: new Date().toISOString()
           }).catch(err => console.warn('Erro ao persistir tarefa ativa:', err));
-        } else {
-          db.collection('activeTasks').doc(String(workerKey)).delete()
+        } else if (shouldClearCurrentProfile) {
+          db.collection('activeTasks').doc(String(profileKey)).delete()
             .catch(err => console.warn('Erro ao limpar tarefa ativa:', err));
-          lastActiveTaskWorkerRef.current = null;
+          lastActiveTaskProfileRef.current = null;
         }
-      }, [activeTask]);
+      }, [activeTask, isLoggedIn, loggedInUser]);
 
       // ─────────────────────────────────────────────
-      // RESTAURAR TAREFA ATIVA AO SELECIONAR FUNCIONÁRIO
-      // Quando o worker muda (e não há tarefa ativa), verifica se há uma tarefa
-      // em andamento salva para esse funcionário e a restaura automaticamente.
+      // RESTAURAR TAREFA ATIVA AO FAZER LOGIN
+      // A tarefa em andamento é isolada por perfil de login para evitar
+      // vazamento de sessão entre usuários.
       // ─────────────────────────────────────────────
       useEffect(() => {
-        if (activeTask) return;  // já tem tarefa ativa, não sobrescrever
-        if (!worker) return;
+        if (!isLoggedIn || !loggedInUser) {
+          setActiveTask(null);
+          return;
+        }
+
+        if (activeTask && activeTask.ownerLogin === loggedInUser) return;  // já tem tarefa deste perfil
+        if (activeTask && activeTask.ownerLogin !== loggedInUser) {
+          setActiveTask(null);
+        }
 
         // 1. Verificar localStorage (mais rápido)
         try {
-          const saved = localStorage.getItem('active_task_' + worker);
+          const saved = localStorage.getItem('active_task_login_' + loggedInUser);
           if (saved) {
             const parsed = JSON.parse(saved);
-            if (parsed && parsed.worker === worker && !parsed.endTime) {
-              setActiveTask(parsed);
-              lastActiveTaskWorkerRef.current = worker;
-              console.log('✅ Tarefa ativa restaurada do localStorage para', worker, ':', parsed.task);
+            const taskOwner = parsed ? (parsed.ownerLogin || (parsed.worker && String(parsed.worker).toLowerCase())) : '';
+            if (parsed && taskOwner === loggedInUser && !parsed.endTime) {
+              setActiveTask({ ...parsed, ownerLogin: loggedInUser });
+              lastActiveTaskProfileRef.current = loggedInUser;
+              console.log('✅ Tarefa ativa restaurada do localStorage para', loggedInUser, ':', parsed.task);
               return;
             } else {
-              localStorage.removeItem('active_task_' + worker); // entrada inválida
+              localStorage.removeItem('active_task_login_' + loggedInUser); // entrada inválida
+            }
+          }
+
+          // Compatibilidade: formato antigo por worker (ex.: active_task_Daniel)
+          const legacyWorkerName = loggedInUser.charAt(0).toUpperCase() + loggedInUser.slice(1);
+          const legacySaved = localStorage.getItem('active_task_' + legacyWorkerName);
+          if (legacySaved) {
+            const parsedLegacy = JSON.parse(legacySaved);
+            const legacyOwner = parsedLegacy ? (parsedLegacy.ownerLogin || (parsedLegacy.worker && String(parsedLegacy.worker).toLowerCase())) : '';
+            if (parsedLegacy && legacyOwner === loggedInUser && !parsedLegacy.endTime) {
+              const migratedTask = { ...parsedLegacy, ownerLogin: loggedInUser };
+              setActiveTask(migratedTask);
+              localStorage.setItem('active_task_login_' + loggedInUser, JSON.stringify(migratedTask));
+              localStorage.removeItem('active_task_' + legacyWorkerName);
+              lastActiveTaskProfileRef.current = loggedInUser;
+              console.log('✅ Tarefa ativa migrada do localStorage legado para', loggedInUser, ':', parsedLegacy.task);
+              return;
             }
           }
         } catch (e) {}
@@ -939,13 +996,32 @@
           }
           if (!currentDb) return;
           try {
-            const docSnap = await currentDb.collection('activeTasks').doc(String(worker)).get();
+            const legacyWorkerName = loggedInUser.charAt(0).toUpperCase() + loggedInUser.slice(1);
+            let docSnap = await currentDb.collection('activeTasks').doc(String(loggedInUser)).get();
+
+            // Compatibilidade: versões antigas salvaram por worker (ex.: Daniel)
+            if (!docSnap.exists) {
+              docSnap = await currentDb.collection('activeTasks').doc(String(legacyWorkerName)).get();
+            }
+
             if (docSnap.exists) {
               const data = docSnap.data();
-              if (data && data.id && !data.endTime) {
-                setActiveTask(data);
-                lastActiveTaskWorkerRef.current = worker;
-                console.log('✅ Tarefa ativa restaurada do Firestore para', worker, ':', data.task);
+              const taskOwner = data ? (data.ownerLogin || (data.worker && String(data.worker).toLowerCase())) : '';
+              if (data && data.id && !data.endTime && taskOwner === loggedInUser) {
+                const migratedTask = { ...data, ownerLogin: loggedInUser };
+                setActiveTask(migratedTask);
+                lastActiveTaskProfileRef.current = loggedInUser;
+                console.log('✅ Tarefa ativa restaurada do Firestore para', loggedInUser, ':', data.task);
+
+                // Migra imediatamente para a chave nova por login
+                currentDb.collection('activeTasks').doc(String(loggedInUser)).set({
+                  ...migratedTask,
+                  updatedAt: new Date().toISOString()
+                }).catch(() => {});
+
+                if (String(docSnap.id) !== String(loggedInUser)) {
+                  currentDb.collection('activeTasks').doc(String(docSnap.id)).delete().catch(() => {});
+                }
               }
             }
           } catch (e) {
@@ -954,7 +1030,7 @@
         };
 
         restoreFromFirestore();
-      }, [worker]); // eslint-disable-line react-hooks/exhaustive-deps
+      }, [isLoggedIn, loggedInUser]); // eslint-disable-line react-hooks/exhaustive-deps
 
       // Sincronizar registros em tempo real com Firestore (listener) - Sempre ativo, com ou sem login
       useEffect(() => {
@@ -1145,24 +1221,28 @@
                     >
                       <LayoutDashboard size={16} /> Principal
                     </button>
-                    <button
-                      onClick={() => setActiveTab('motivos')}
-                      className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === 'motivos' ? 'bg-white shadow-sm text-indigo-700' : 'text-slate-600 hover:text-indigo-600'}`}
-                    >
-                      <ListPlus size={16} /> Cadastros
-                    </button>
-                    <button
-                      onClick={() => setActiveTab('relatorios')}
-                      className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === 'relatorios' ? 'bg-white shadow-sm text-indigo-700' : 'text-slate-600 hover:text-indigo-600'}`}
-                    >
-                      <PieChart size={16} /> Relatórios
-                    </button>
-                    <button
-                      onClick={() => setActiveTab('dashboard2')}
-                      className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === 'dashboard2' ? 'bg-white shadow-sm text-indigo-700' : 'text-slate-600 hover:text-indigo-600'}`}
-                    >
-                      <BarChart2 size={16} /> Dashboard 2
-                    </button>
+                    {!isDanielRestricted && (
+                      <>
+                        <button
+                          onClick={() => setActiveTab('motivos')}
+                          className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === 'motivos' ? 'bg-white shadow-sm text-indigo-700' : 'text-slate-600 hover:text-indigo-600'}`}
+                        >
+                          <ListPlus size={16} /> Cadastros
+                        </button>
+                        <button
+                          onClick={() => setActiveTab('relatorios')}
+                          className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === 'relatorios' ? 'bg-white shadow-sm text-indigo-700' : 'text-slate-600 hover:text-indigo-600'}`}
+                        >
+                          <PieChart size={16} /> Relatórios
+                        </button>
+                        <button
+                          onClick={() => setActiveTab('dashboard2')}
+                          className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === 'dashboard2' ? 'bg-white shadow-sm text-indigo-700' : 'text-slate-600 hover:text-indigo-600'}`}
+                        >
+                          <BarChart2 size={16} /> Dashboard 2
+                        </button>
+                      </>
+                    )}
                   </div>
                 )}
               </div>
@@ -1172,7 +1252,7 @@
                   <>
                     <div className="hidden md:block text-right">
                       <p className="text-sm text-slate-500">Sessão iniciada por</p>
-                      <p className="font-semibold text-slate-800">Sara</p>
+                      <p className="font-semibold text-slate-800">{loggedInUser ? loggedInUser.charAt(0).toUpperCase() + loggedInUser.slice(1) : 'Sara'}</p>
                     </div>
                     <button 
                       onClick={handleLogout}
@@ -1195,7 +1275,7 @@
             </div>
 
             {/* --- CONTEÚDO DA ABA: CADASTRO --- */}
-            {activeTab === 'motivos' && isLoggedIn && (
+            {activeTab === 'motivos' && isLoggedIn && !isDanielRestricted && (
               <div className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm animate-in fade-in duration-300">
                 <h2 className="text-xl font-bold mb-6 text-slate-800 flex items-center gap-2 border-b border-slate-100 pb-4">
                   <ListPlus className="text-indigo-600" />
@@ -1265,15 +1345,9 @@
                           <div key={index} className="flex items-center justify-between p-3 bg-white border border-slate-100 rounded-lg hover:bg-slate-100 transition-colors">
                             <div className="flex items-center gap-3">
                               <span className="font-medium text-slate-700">{name}</span>
-                              {worker === name && <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100">Ativo</span>}
+                              {currentWorker === name && <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100">Login atual</span>}
                             </div>
                             <div className="flex items-center gap-2">
-                              <button
-                                onClick={() => setWorker(name)}
-                                className="text-indigo-600 hover:text-indigo-800 text-sm font-semibold"
-                              >
-                                Definir
-                              </button>
                               <button 
                                 onClick={() => handleRemoveEmployee(name)}
                                 className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors"
@@ -1329,7 +1403,7 @@
             )}
 
             {/* --- CONTEÚDO DA ABA: RELATÓRIOS (VISÃO EXECUTIVA) --- */}
-            {activeTab === 'relatorios' && isLoggedIn && (
+            {activeTab === 'relatorios' && isLoggedIn && !isDanielRestricted && (
               <div className="space-y-6 animate-in fade-in duration-300 print:m-0 print:p-0">
                 
                 {/* Header Executivo (Novo) */}
@@ -1594,17 +1668,12 @@
                   <div className="flex flex-col md:flex-row gap-4 mb-6">
                     <div className="flex-1">
                       <label className="block text-sm font-medium text-slate-600 mb-1">Funcionário</label>
-                      <select
-                        value={worker}
-                        onChange={(e) => setWorker(e.target.value)}
-                        disabled={activeTask !== null || employees.length === 0}
-                        className="w-full border border-slate-200 rounded-lg px-4 py-2 focus:ring-2 focus:ring-indigo-500 outline-none disabled:bg-slate-50"
-                      >
-                        {employees.length === 0 && <option value="">Sem funcionários</option>}
-                        {employees.map(name => (
-                          <option key={name} value={name}>{name}</option>
-                        ))}
-                      </select>
+                      <input
+                        type="text"
+                        value={currentWorker || 'Faça login'}
+                        readOnly
+                        className="w-full border border-slate-200 rounded-lg px-4 py-2 bg-slate-50 text-slate-700"
+                      />
                     </div>
                     <div className="flex-1">
                       <label className="block text-sm font-medium text-slate-600 mb-1">Tarefa</label>
@@ -1799,7 +1868,7 @@
             )}
 
             {/* --- CONTEÚDO DA ABA: DASHBOARD 2 --- */}
-            {activeTab === 'dashboard2' && (
+            {activeTab === 'dashboard2' && !isDanielRestricted && (
               <div className="space-y-6 animate-in fade-in duration-300">
                 
                 {/* Header Executivo do Dashboard 2 */}
